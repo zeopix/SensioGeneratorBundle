@@ -13,11 +13,13 @@ namespace Sensio\Bundle\GeneratorBundle\Command;
 
 use Sensio\Bundle\GeneratorBundle\Generator\DoctrineEntityGenerator;
 use Sensio\Bundle\GeneratorBundle\Command\Helper\QuestionHelper;
+use Sensio\Bundle\GeneratorBundle\Command\AutoComplete\EntitiesAutoCompleter;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\Console\Question\Question;
+use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Doctrine\DBAL\Types\Type;
 
 /**
@@ -216,9 +218,28 @@ EOT
         }
         $output->writeln('');
 
-        $fieldValidator = function ($type) use ($types) {
+        $output->write('<info>Available relations:</info> ');
+
+        $relations = array('many_to_many', 'many_to_one', 'one_to_one', 'one_to_many');
+        foreach ($relations as $i => $relation) {
+            $count += strlen($relation);
+            $output->write(sprintf('<comment>%s</comment>', $relation));
+            if (count($relations) != $i + 1) {
+                $output->write(', ');
+            } else {
+                $output->write('.');
+            }
+        }
+        $output->writeln('');
+
+        $autocompleter = new EntitiesAutoCompleter($this->getContainer()->get('doctrine')->getManager());
+        $autocompleteEntities = $autocompleter->getSuggestions(EntitiesAutoCompleter::NO_REPLACEMENTS);
+
+        $mappings = array_merge($types, $relations);
+
+        $fieldValidator = function ($type) use ($mappings) {
             // FIXME: take into account user-defined field types
-            if (!in_array($type, $types)) {
+            if (!in_array($type, $mappings)) {
                 throw new \InvalidArgumentException(sprintf('Invalid type "%s".', $type));
             }
 
@@ -278,7 +299,7 @@ EOT
 
             $question = new Question($questionHelper->getQuestion('Field type', $defaultType), $defaultType);
             $question->setValidator($fieldValidator);
-            $question->setAutocompleterValues($types);
+            $question->setAutocompleterValues($mappings);
             $type = $questionHelper->ask($input, $output, $question);
 
             $data = array('columnName' => $columnName, 'fieldName' => lcfirst(Container::camelize($columnName)), 'type' => $type);
@@ -287,6 +308,88 @@ EOT
                 $question = new Question($questionHelper->getQuestion('Field length', 255), 255);
                 $question->setValidator($lengthValidator);
                 $data['length'] = $questionHelper->ask($input, $output, $question);
+            }
+
+            if ($type == 'one_to_many') {
+                $question = new Question($questionHelper->getQuestion('Target Entity class', ''), '');
+                $question->setAutocompleterValues($autocompleteEntities);
+                $data['targetEntity'] = $questionHelper->ask($input, $output, $question);
+
+                $question = new Question($questionHelper->getQuestion('Mapped by', ''), '');
+                $mappedBy = $questionHelper->ask($input, $output, $question);
+                if (empty($mappedBy) == false)
+                    $data['mappedBy'] = $mappedBy;
+            }
+
+            if ($type == 'many_to_one') {
+                $question = new Question($questionHelper->getQuestion('Target Entity class', ''), '');
+                $question->setAutocompleterValues($autocompleteEntities);
+                $data['targetEntity'] = $questionHelper->ask($input, $output, $question);
+
+                $question = new Question($questionHelper->getQuestion('Inversed by', ''), '');
+                $inversedBy = $questionHelper->ask($input, $output, $question);
+                if (empty($inversedBy) == false)
+                    $data['inversedBy'] = $inversedBy;
+
+                $question = new Question($questionHelper->getQuestion('Join Column Name', ''), '');
+                $joinColumnName = $questionHelper->ask($input, $output, $question);
+                if (empty($joinColumnName) == false)
+                    $data['joinColumn'] = array('name' => $joinColumnName, 'referencedColumnName' => 'id');
+            }
+
+            if ($type == 'one_to_one') {
+                $question = new Question($questionHelper->getQuestion('Target Entity class', ''), '');
+                $question->setAutocompleterValues($autocompleteEntities);
+                $data['targetEntity'] = $questionHelper->ask($input, $output, $question);
+
+                $question = new ConfirmationQuestion($questionHelper->getQuestion('Is Owning Side?', 'yes'), true);
+                $isOwningSide = $questionHelper->ask($input, $output, $question);
+                if ($isOwningSide == true) {
+                    $question = new Question($questionHelper->getQuestion('Inversed By', ''), '');
+                    $inversedBy = $questionHelper->ask($input, $output, $question);
+                    if (empty($inversedBy) == false)
+                        $data['inversedBy'] = $inversedBy;
+
+                    $question = new Question($questionHelper->getQuestion('Join Column Name', ''), '');
+                    $joinColumnName = $questionHelper->ask($input, $output, $question);
+                    $data['joinColumn'] = array('name' => $joinColumnName, 'referencedColumnName' => 'id');
+                    $data['isOwningSide'] = true;
+                } else {
+                    $question = new Question($questionHelper->getQuestion('Mapped By', ''), '');
+                    $mappedBy = $questionHelper->ask($input, $output, $question);
+                    if (empty($mappedBy) == false)
+                        $data['mappedBy'] = $mappedBy;
+                    $data['isOwningSide'] = false;
+                }
+            }
+
+            if ($type == 'many_to_many') {
+                $question = new Question($questionHelper->getQuestion('Target Entity class', ''), '');
+                $question->setAutocompleterValues($autocompleteEntities);
+                $data['targetEntity'] = $questionHelper->ask($input, $output, $question);
+
+                $question = new ConfirmationQuestion($questionHelper->getQuestion('Is Owning Side?', 'yes'), true);
+                $isOwningSide = $questionHelper->ask($input, $output, $question);
+                if($isOwningSide == true){
+                    $question = new Question($questionHelper->getQuestion('Inversed By', ''), '');
+                    $inversedBy = $questionHelper->ask($input, $output, $question);
+                    if (empty($inversedBy) == false)
+                        $data['inversedBy'] = $inversedBy;
+
+                    $question = new Question($questionHelper->getQuestion('Join Table Name', ''), '');
+                    $joinTableName = $questionHelper->ask($input, $output, $question);
+                    if (empty($joinTableName) == false)
+                        $data['joinTable'] = array('name' => $joinTableName);
+
+                    $data['isOwningSide'] = true;
+                }else{
+                    $question = new Question($questionHelper->getQuestion('Mapped By', ''), '');
+                    $mappedBy = $questionHelper->ask($input, $output, $question);
+                    if (empty($mappedBy) == false)
+                        $data['mappedBy'] = $mappedBy;
+
+                    $data['isOwningSide'] = false;
+                }
             }
 
             $fields[$columnName] = $data;

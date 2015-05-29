@@ -67,7 +67,23 @@ class DoctrineEntityGenerator extends Generator
         $class->mapField(array('fieldName' => 'id', 'type' => 'integer', 'id' => true));
         $class->setIdGeneratorType(ClassMetadataInfo::GENERATOR_TYPE_AUTO);
         foreach ($fields as $field) {
-            $class->mapField($field);
+            switch ($field['type']) {
+                case 'one_to_many':
+                    $class->mapOneToMany($field);
+                    break;
+                case 'one_to_one':
+                    $class->mapOneToOne($field);
+                    break;
+                case 'many_to_many':
+                    $class->mapManyToMany($field);
+                    break;
+                case 'many_to_one':
+                    $class->mapManyToOne($field);
+                    break;
+                default:
+                    $class->mapField($field);
+                    break;
+            }
         }
 
         $entityGenerator = $this->getEntityGenerator();

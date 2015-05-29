@@ -20,6 +20,10 @@ use Doctrine\ORM\EntityManagerInterface;
  */
 class EntitiesAutoCompleter
 {
+    const APPLY_REPLACEMENTS = true;
+
+    const NO_REPLACEMENTS = false;
+
     private $manager;
 
     public function __construct(EntityManagerInterface $manager)
@@ -27,25 +31,34 @@ class EntitiesAutoCompleter
         $this->manager = $manager;
     }
 
-    public function getSuggestions()
+    /**
+     * @param bool $applyNamespaceReplacements
+     * 
+     * @return array
+     */
+    public function getSuggestions($applyNamespaceReplacements = self::APPLY_REPLACEMENTS)
     {
         $configuration = $this->manager
             ->getConfiguration()
         ;
-
-        $namespaceReplacements = array();
-
-        foreach ($configuration->getEntityNamespaces() as $alias => $namespace) {
-            $namespaceReplacements[$namespace.'\\'] = $alias.':';
-        }
 
         $entities = $configuration
             ->getMetadataDriverImpl()
             ->getAllClassNames()
         ;
 
-        return array_map(function ($entity) use ($namespaceReplacements) {
-            return strtr($entity, $namespaceReplacements);
-        }, $entities);
+        if ($applyNamespaceReplacements == true) {
+            $namespaceReplacements = array();
+
+            foreach ($configuration->getEntityNamespaces() as $alias => $namespace) {
+                $namespaceReplacements[$namespace.'\\'] = $alias.':';
+            }
+
+            $entities = array_map(function ($entity) use ($namespaceReplacements) {
+                return strtr($entity, $namespaceReplacements);
+            }, $entities);
+        }
+
+        return $entities;
     }
 }
